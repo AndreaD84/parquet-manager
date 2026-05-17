@@ -100,9 +100,11 @@
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.28.0",
     "typescript": "^5.5.0"
   },
   "dependencies": {
+    "@duckdb/duckdb-wasm": "^1.28.0",
     "hyparquet": "^1.25.1",
     "hyparquet-compressors": "^1.1.1"
   }

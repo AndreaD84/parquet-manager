@@ -1,4 +1,5 @@
 node_modules/
+media/vendor/
 out/
 dist/
 *.vsix

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { DuckdbService } from './duckdbService';
 import { ParquetEditorProvider } from './parquetEditorProvider';
 import {
   defaultExportUri,
@@ -8,11 +9,12 @@ import {
 
 export function activate(context: vscode.ExtensionContext): void {
   const parquetService = new ParquetService();
+  const duckdbService = new DuckdbService(context.extensionPath);
 
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
       ParquetEditorProvider.viewType,
-      new ParquetEditorProvider(context, parquetService),
+      new ParquetEditorProvider(context, parquetService, duckdbService),
       { webviewOptions: { retainContextWhenHidden: true } },
     ),
   );

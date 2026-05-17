@@ -69,6 +69,12 @@ function serializeValue(value: unknown): unknown {
   if (typeof value === 'bigint') {
     return value.toString();
   }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (Buffer.isBuffer(value)) {
+    return value.toString('base64');
+  }
   if (value instanceof Uint8Array) {
     return Buffer.from(value).toString('base64');
   }
