@@ -1,0 +1,109 @@
+{
+  "name": "parquet-manager",
+  "displayName": "Parquet Manager",
+  "description": "Read, preview, and manage Apache Parquet files in VS Code and Cursor",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Data Science"
+  ],
+  "keywords": [
+    "parquet",
+    "data",
+    "columnar",
+    "preview"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "parquet-manager.preview",
+        "displayName": "Parquet Preview",
+        "selector": [
+          {
+            "filenamePattern": "*.parquet"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "parquet-manager.openPreview",
+        "title": "Parquet: Open Preview",
+        "icon": "$(table)"
+      },
+      {
+        "command": "parquet-manager.exportCsv",
+        "title": "Parquet: Export to CSV"
+      },
+      {
+        "command": "parquet-manager.exportJson",
+        "title": "Parquet: Export to JSON"
+      },
+      {
+        "command": "parquet-manager.showSchema",
+        "title": "Parquet: Show Schema"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "parquet-manager.openPreview",
+          "when": "resourceExtname == .parquet",
+          "group": "navigation"
+        },
+        {
+          "command": "parquet-manager.exportCsv",
+          "when": "resourceExtname == .parquet",
+          "group": "9_cutcopypaste@2"
+        },
+        {
+          "command": "parquet-manager.exportJson",
+          "when": "resourceExtname == .parquet",
+          "group": "9_cutcopypaste@3"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "parquet-manager.exportCsv",
+          "when": "resourceExtname == .parquet",
+          "group": "navigation@1"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "parquet",
+        "extensions": [
+          ".parquet"
+        ],
+        "aliases": [
+          "Parquet"
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.1",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "hyparquet": "^1.25.1",
+    "hyparquet-compressors": "^1.1.1"
+  }
+}
