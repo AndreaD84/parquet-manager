@@ -372,7 +372,7 @@ tr.editing {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-td input.cell-edit {
+td .cell-edit {
   width: 100%;
   min-width: 80px;
   background: var(--vscode-input-background);
@@ -384,11 +384,42 @@ td input.cell-edit {
   font-size: inherit;
 }
 
-td input.cell-edit:focus {
+td .cell-edit:focus {
   outline: none;
   border-color: var(--accent);
 }
 
 td input.cell-edit[readonly] {
   opacity: 0.6;
+}
+
+body.vscode-dark,
+body.vscode-high-contrast:not(.vscode-high-contrast-light) {
+  color-scheme: dark;
+}
+
+body.vscode-light,
+body.vscode-high-contrast-light {
+  color-scheme: light;
+}
+
+select option {
+  background: var(--vscode-dropdown-background, var(--vscode-input-background));
+  color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+}
+
+td select.cell-edit {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 20px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--vscode-input-foreground) 50%),
+    linear-gradient(135deg, var(--vscode-input-foreground) 50%, transparent 50%);
+  background-position: calc(100% - 11px) 50%, calc(100% - 6px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+td select.cell-edit option {
+  background: var(--vscode-dropdown-background, var(--vscode-input-background));
+  color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
 }

@@ -136,12 +136,28 @@ export class ParquetEditorProvider implements vscode.CustomReadonlyEditorProvide
     try {
       await this.duckdbService.ensureReady(filePath);
       post({ type: 'sqlStatus', state: 'ready', message: 'DuckDB ready — you can run SQL queries.' });
+      await this.sendColumnTypes(filePath, post);
     } catch (err) {
       post({
         type: 'sqlStatus',
         state: 'error',
         message: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+
+  private async sendColumnTypes(
+    filePath: string,
+    post: (message: unknown) => void,
+  ): Promise<void> {
+    try {
+      const map = await this.duckdbService.getColumnTypes(filePath);
+      const types: Record<string, string> = {};
+      for (const [name, type] of map) {
+        types[name] = type;
+      }
+      post({ type: 'columnTypes', types });
+    } catch {
     }
   }
 
@@ -165,6 +181,7 @@ export class ParquetEditorProvider implements vscode.CustomReadonlyEditorProvide
       await swapFile(tmpPath, uri.fsPath);
       await this.duckdbService.ensureReady(uri.fsPath);
       post({ type: 'rowSaved', rowIndex: message.rowIndex });
+      await this.sendColumnTypes(uri.fsPath, post);
       await this.sendBrowsePage(uri, webview, message.rowStart, message.pageSize);
     } catch (err) {
       try {

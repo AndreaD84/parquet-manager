@@ -22,6 +22,8 @@ let duckdbReady = false;
 let duckdbReadyMessage = 'DuckDB ready.';
 /** @type {{ rowIndex: number; tr: HTMLTableRowElement } | null} */
 let editingRow = null;
+/** @type {Record<string, string>} */
+let duckdbTypes = {};
 
 const fileNameEl = document.getElementById('fileName');
 const statsEl = document.getElementById('stats');
@@ -118,6 +120,154 @@ function isEditableValue(value) {
   }
   const t = typeof value;
   return t === 'string' || t === 'number' || t === 'bigint' || t === 'boolean';
+}
+
+/** @param {string | undefined} duckdbType */
+function classifyType(duckdbType) {
+  if (!duckdbType) {
+    return 'text';
+  }
+  const t = duckdbType.toUpperCase();
+  if (t === 'BOOLEAN') {
+    return 'boolean';
+  }
+  if (/^(TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|UTINYINT|USMALLINT|UINTEGER|UBIGINT|UHUGEINT)$/.test(t)) {
+    return 'number-int';
+  }
+  if (/^(FLOAT|REAL|DOUBLE)$/.test(t) || t.startsWith('DECIMAL')) {
+    return 'number-float';
+  }
+  if (t === 'DATE') {
+    return 'date';
+  }
+  if (t.startsWith('TIMESTAMP')) {
+    return 'datetime';
+  }
+  if (t === 'TIME' || t.startsWith('TIME WITH')) {
+    return 'time';
+  }
+  if (t === 'VARCHAR' || t === 'TEXT' || t === 'STRING' || t === 'UUID') {
+    return 'text';
+  }
+  if (t === 'BLOB' || t.startsWith('LIST') || t.startsWith('STRUCT') || t.startsWith('MAP') || t.startsWith('ARRAY') || t.startsWith('UNION')) {
+    return 'readonly';
+  }
+  return 'text';
+}
+
+/** @param {unknown} value @param {string} kind */
+function originalAsInputValue(value, kind) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (kind === 'boolean') {
+    if (value === true || value === 'true') return 'true';
+    if (value === false || value === 'false') return 'false';
+    return '';
+  }
+  if (kind === 'date') {
+    const s = String(value);
+    return s.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : '';
+  }
+  if (kind === 'datetime') {
+    const s = String(value);
+    const m = s.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)/);
+    return m ? `${m[1]}T${m[2]}` : '';
+  }
+  if (kind === 'time') {
+    const s = String(value);
+    const m = s.match(/^(\d{2}:\d{2}(?::\d{2})?)/);
+    return m ? m[1] : '';
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+/**
+ * @param {string} colName
+ * @param {unknown} originalValue
+ * @returns {{ el: HTMLElement; kind: string; getValue: () => string | null; editable: boolean }}
+ */
+function createCellInput(colName, originalValue) {
+  const kind = classifyType(duckdbTypes[colName]);
+  const original = originalValue;
+  const initial = originalAsInputValue(original, kind);
+
+  if (kind === 'boolean') {
+    const select = document.createElement('select');
+    select.className = 'cell-edit';
+    for (const [val, label] of [['', '(null)'], ['true', 'true'], ['false', 'false']]) {
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = label;
+      select.appendChild(opt);
+    }
+    select.value = initial;
+    return {
+      el: select,
+      kind,
+      getValue: () => (select.value === '' ? null : select.value),
+      editable: true,
+    };
+  }
+
+  if (kind === 'readonly') {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'cell-edit';
+    input.readOnly = true;
+    input.title = `${duckdbTypes[colName] || 'complex'} — not editable`;
+    input.value = formatCell(original);
+    return { el: input, kind, getValue: () => null, editable: false };
+  }
+
+  const input = document.createElement('input');
+  input.className = 'cell-edit';
+  if (kind === 'number-int') {
+    input.type = 'number';
+    input.step = '1';
+  } else if (kind === 'number-float') {
+    input.type = 'number';
+    input.step = 'any';
+  } else if (kind === 'date') {
+    input.type = 'date';
+  } else if (kind === 'datetime') {
+    input.type = 'datetime-local';
+    input.step = '1';
+  } else if (kind === 'time') {
+    input.type = 'time';
+    input.step = '1';
+  } else {
+    input.type = 'text';
+  }
+  input.value = initial;
+  return {
+    el: input,
+    kind,
+    getValue: () => normalizeValueForKind(input.value, kind),
+    editable: true,
+  };
+}
+
+/** @param {string} value @param {string} kind */
+function normalizeValueForKind(value, kind) {
+  if (value === '') {
+    return null;
+  }
+  if (kind === 'datetime') {
+    let v = value.replace('T', ' ');
+    const timeMatch = v.match(/(\d{2}:\d{2})(:\d{2})?(\.\d+)?$/);
+    if (timeMatch && !timeMatch[2]) {
+      v = `${v}:00`;
+    }
+    return v;
+  }
+  if (kind === 'time') {
+    return /^\d{2}:\d{2}$/.test(value) ? `${value}:00` : value;
+  }
+  return value;
 }
 
 /** @param {Record<string, unknown>[]} rows @param {{ name: string; type: string }[]} cols */
@@ -217,7 +367,7 @@ function startEdit(tr, originalRow, cols) {
   actionTd.appendChild(cancelBtn);
 
   const tds = tr.querySelectorAll('td[data-col-name]');
-  /** @type {{ colName: string; input: HTMLInputElement; original: unknown; editable: boolean }[]} */
+  /** @type {{ colName: string; el: HTMLElement; kind: string; getValue: () => string | null; original: unknown; originalAsInput: string; editable: boolean }[]} */
   const fields = [];
   let firstInput = null;
 
@@ -226,26 +376,35 @@ function startEdit(tr, originalRow, cols) {
     const colName = td.dataset.colName ?? '';
     const original = originalRow[colName];
     const editable = isEditableValue(original);
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'cell-edit';
-    input.value = original === null || original === undefined ? '' : formatCell(original);
-    input.dataset.originalIsNull = original === null || original === undefined ? '1' : '0';
-    if (!editable) {
-      input.readOnly = true;
-      input.title = 'Complex value — not editable';
+    const { el, kind, getValue, editable: typeEditable } = createCellInput(colName, original);
+    const finalEditable = editable && typeEditable;
+    if (!finalEditable && el instanceof HTMLInputElement) {
+      el.readOnly = true;
     }
     td.textContent = '';
-    td.appendChild(input);
-    if (!firstInput && editable) {
-      firstInput = input;
+    td.appendChild(el);
+    if (!firstInput && finalEditable) {
+      firstInput = el;
     }
-    fields.push({ colName, input, original, editable });
+    const originalAsInput = originalAsInputValue(original, kind);
+    const originalNormalized =
+      originalAsInput === '' ? null : normalizeValueForKind(originalAsInput, kind);
+    fields.push({
+      colName,
+      el,
+      kind,
+      getValue,
+      original,
+      originalNormalized,
+      editable: finalEditable,
+    });
   });
 
   if (firstInput) {
     firstInput.focus();
-    firstInput.select();
+    if (firstInput instanceof HTMLInputElement && firstInput.type === 'text') {
+      firstInput.select();
+    }
   }
 
   cancelBtn.addEventListener('click', () => {
@@ -260,18 +419,11 @@ function startEdit(tr, originalRow, cols) {
       if (!field.editable) {
         continue;
       }
-      const originalStr =
-        field.original === null || field.original === undefined ? '' : formatCell(field.original);
-      const newStr = field.input.value;
-      const wasNull = field.input.dataset.originalIsNull === '1';
-      if (newStr === originalStr && !(newStr === '' && !wasNull)) {
+      const newRaw = field.getValue();
+      if (newRaw === field.originalNormalized) {
         continue;
       }
-      const newValue = newStr === '' ? null : newStr;
-      if (wasNull && newValue === null) {
-        continue;
-      }
-      changes[field.colName] = newValue;
+      changes[field.colName] = newRaw;
       hasChange = true;
     }
     if (!hasChange) {
@@ -281,7 +433,9 @@ function startEdit(tr, originalRow, cols) {
     saveBtn.disabled = true;
     cancelBtn.disabled = true;
     for (const f of fields) {
-      f.input.disabled = true;
+      if (f.el instanceof HTMLInputElement || f.el instanceof HTMLSelectElement) {
+        f.el.disabled = true;
+      }
     }
     setStatus('Saving row…');
     vscode.postMessage({
@@ -461,10 +615,17 @@ window.addEventListener('message', (event) => {
       tr.querySelectorAll('button.row-action-btn').forEach((b) => {
         /** @type {HTMLButtonElement} */ (b).disabled = false;
       });
-      tr.querySelectorAll('input.cell-edit').forEach((i) => {
-        /** @type {HTMLInputElement} */ (i).disabled = false;
+      tr.querySelectorAll('.cell-edit').forEach((el) => {
+        if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) {
+          el.disabled = false;
+        }
       });
     }
+    return;
+  }
+
+  if (msg.type === 'columnTypes') {
+    duckdbTypes = msg.types ?? {};
     return;
   }
 
