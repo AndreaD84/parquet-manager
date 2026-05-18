@@ -216,6 +216,13 @@ export function pickParquetUri(resource?: vscode.Uri): vscode.Uri | undefined {
   if (active?.fsPath.toLowerCase().endsWith('.parquet')) {
     return active;
   }
+  const tabInput = vscode.window.tabGroups.activeTabGroup.activeTab?.input as
+    | { uri?: vscode.Uri }
+    | undefined;
+  const tabUri = tabInput?.uri;
+  if (tabUri?.fsPath?.toLowerCase().endsWith('.parquet')) {
+    return tabUri;
+  }
   return undefined;
 }
 
