@@ -32,6 +32,11 @@ const statusEl = document.getElementById('status');
 const duckdbStatusEl = document.getElementById('duckdbStatus');
 const tableHead = document.getElementById('tableHead');
 const tableBody = document.getElementById('tableBody');
+const layoutEl = document.getElementById('layout');
+const schemaPanel = document.getElementById('schemaPanel');
+const sqlPanel = document.getElementById('sqlPanel');
+const toggleSchemaBtn = /** @type {HTMLButtonElement} */ (document.getElementById('toggleSchemaBtn'));
+const toggleSqlBtn = /** @type {HTMLButtonElement} */ (document.getElementById('toggleSqlBtn'));
 const sqlInput = /** @type {HTMLTextAreaElement} */ (document.getElementById('sqlInput'));
 const runSqlBtn = /** @type {HTMLButtonElement} */ (document.getElementById('runSqlBtn'));
 const resetSqlBtn = /** @type {HTMLButtonElement} */ (document.getElementById('resetSqlBtn'));
@@ -52,6 +57,21 @@ function setDuckdbStatus(text, isError = false) {
 
 function updateRunButton() {
   runSqlBtn.disabled = !duckdbReady;
+}
+
+function setSchemaCollapsed(collapsed) {
+  schemaPanel.classList.toggle('collapsed', collapsed);
+  layoutEl.classList.toggle('schema-collapsed', collapsed);
+  toggleSchemaBtn.setAttribute('aria-expanded', String(!collapsed));
+  toggleSchemaBtn.title = collapsed ? 'Expand schema' : 'Collapse schema';
+  toggleSchemaBtn.querySelector('.toggle-icon').textContent = collapsed ? '▸' : '▾';
+}
+
+function setSqlCollapsed(collapsed) {
+  sqlPanel.classList.toggle('collapsed', collapsed);
+  toggleSqlBtn.setAttribute('aria-expanded', String(!collapsed));
+  toggleSqlBtn.title = collapsed ? 'Expand SQL panel' : 'Collapse SQL panel';
+  toggleSqlBtn.querySelector('.toggle-icon').textContent = collapsed ? '▸' : '▾';
 }
 
 function formatCell(value) {
@@ -190,6 +210,14 @@ rowStartEl.addEventListener('change', () => {
 pageSizeEl.addEventListener('change', () => {
   pageSize = Number.parseInt(pageSizeEl.value, 10) || 100;
   requestPage();
+});
+
+toggleSchemaBtn.addEventListener('click', () => {
+  setSchemaCollapsed(!schemaPanel.classList.contains('collapsed'));
+});
+
+toggleSqlBtn.addEventListener('click', () => {
+  setSqlCollapsed(!sqlPanel.classList.contains('collapsed'));
 });
 
 runSqlBtn.addEventListener('click', runSql);

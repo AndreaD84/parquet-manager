@@ -98,15 +98,54 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
 }
 
-.sql-label {
+.sql-content {
+  margin-top: 6px;
+}
+
+.sql-panel.collapsed .sql-content,
+.sql-panel.collapsed .sql-actions {
+  display: none;
+}
+
+.section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 4px 8px;
   font-weight: 600;
-  margin-right: auto;
+  cursor: pointer;
 }
 
-.sql-toolbar button {
+.section-toggle:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  color: var(--accent);
+}
+
+.sql-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.sql-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
   border: none;
@@ -115,11 +154,11 @@ body {
   cursor: pointer;
 }
 
-.sql-toolbar button:hover:not(:disabled) {
+.sql-actions button:hover:not(:disabled) {
   background: var(--vscode-button-hoverBackground);
 }
 
-.sql-toolbar button:disabled {
+.sql-actions button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -165,6 +204,10 @@ body {
   min-height: 0;
 }
 
+.layout.schema-collapsed {
+  grid-template-columns: 44px 1fr;
+}
+
 .schema-panel {
   border-right: 1px solid var(--border);
   background: var(--surface);
@@ -172,12 +215,36 @@ body {
   padding: 12px;
 }
 
-.schema-panel h2 {
-  margin: 0 0 10px;
+.schema-panel.collapsed {
+  overflow: hidden;
+  padding: 8px 6px;
+}
+
+.schema-toggle {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.schema-panel.collapsed .schema-toggle {
+  align-items: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 2px;
+}
+
+.schema-title {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--muted);
+}
+
+.schema-panel.collapsed .schema-title {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.schema-panel.collapsed #schemaList {
+  display: none;
 }
 
 #schemaList {

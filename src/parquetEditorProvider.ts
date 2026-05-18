@@ -186,19 +186,35 @@ export class ParquetEditorProvider implements vscode.CustomReadonlyEditorProvide
       </label>
     </div>
   </header>
-  <section id="sqlPanel" class="sql-panel">
+  <section id="sqlPanel" class="sql-panel collapsed">
     <div class="sql-toolbar">
-      <label for="sqlInput" class="sql-label">SQL</label>
-      <button id="runSqlBtn" type="button" title="Run query (Ctrl+Enter)">Run</button>
-      <button id="resetSqlBtn" type="button" title="Clear filter and return to browse mode">Reset</button>
+      <button id="toggleSqlBtn" class="section-toggle" type="button" aria-expanded="false" aria-controls="sqlContent" title="Expand SQL panel">
+        <span class="toggle-icon" aria-hidden="true">▸</span>
+        <span>SQL</span>
+      </button>
+      <div class="sql-actions">
+        <button id="runSqlBtn" type="button" title="Run query (Ctrl+Enter)">
+          <span aria-hidden="true">▶</span>
+          <span>Run</span>
+        </button>
+        <button id="resetSqlBtn" type="button" title="Clear filter and return to browse mode">
+          <span aria-hidden="true">↺</span>
+          <span>Reset</span>
+        </button>
+      </div>
     </div>
-    <textarea id="sqlInput" class="sql-input" rows="3" spellcheck="false" placeholder="SELECT * FROM parquet_data WHERE …"></textarea>
-    <p id="duckdbStatus" class="duckdb-status">Starting DuckDB…</p>
-    <p class="sql-hint">Query the <code>parquet_data</code> view. DuckDB runs in the extension host. Ctrl+Enter to run.</p>
+    <div id="sqlContent" class="sql-content">
+      <textarea id="sqlInput" class="sql-input" rows="3" spellcheck="false" placeholder="SELECT * FROM parquet_data WHERE …"></textarea>
+      <p id="duckdbStatus" class="duckdb-status">Starting DuckDB…</p>
+      <p class="sql-hint">Ctrl+Enter to run the query</p>
+    </div>
   </section>
-  <main class="layout">
-    <aside class="schema-panel">
-      <h2>Schema</h2>
+  <main id="layout" class="layout schema-collapsed">
+    <aside id="schemaPanel" class="schema-panel collapsed">
+      <button id="toggleSchemaBtn" class="section-toggle schema-toggle" type="button" aria-expanded="false" aria-controls="schemaList" title="Expand schema">
+        <span class="toggle-icon" aria-hidden="true">▸</span>
+        <span class="schema-title">Schema</span>
+      </button>
       <ul id="schemaList"></ul>
     </aside>
     <section class="table-panel">
