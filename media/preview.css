@@ -254,8 +254,26 @@ body {
 }
 
 #schemaList li {
-  padding: 6px 0;
   border-bottom: 1px solid var(--border);
+}
+
+.schema-col {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.schema-toggle-cb {
+  margin: 3px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+.col-text {
+  flex: 1;
+  min-width: 0;
 }
 
 #schemaList .col-name {
@@ -267,6 +285,13 @@ body {
   font-size: 11px;
   color: var(--muted);
   margin-top: 2px;
+}
+
+.empty-row {
+  text-align: center;
+  color: var(--muted);
+  padding: 18px;
+  white-space: normal;
 }
 
 .table-panel {

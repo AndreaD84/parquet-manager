@@ -24,6 +24,8 @@ let duckdbReadyMessage = 'DuckDB ready.';
 let editingRow = null;
 /** @type {Record<string, string>} */
 let duckdbTypes = {};
+/** @type {Set<string>} */
+const hiddenColumns = new Set();
 
 const fileNameEl = document.getElementById('fileName');
 const statsEl = document.getElementById('stats');
@@ -106,11 +108,61 @@ function escapeHtml(text) {
 
 function renderSchema(cols) {
   schemaList.innerHTML = '';
+  const allowToggle = viewMode === 'browse';
   for (const col of cols) {
     const li = document.createElement('li');
-    li.innerHTML = `<div class="col-name">${escapeHtml(col.name)}</div><div class="col-type">${escapeHtml(col.type)}</div>`;
+    li.className = 'schema-item';
+
+    const label = document.createElement('label');
+    label.className = 'schema-col';
+
+    if (allowToggle) {
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'schema-toggle-cb';
+      cb.checked = !hiddenColumns.has(col.name);
+      cb.title = cb.checked ? 'Hide column' : 'Show column';
+      cb.addEventListener('change', () => {
+        if (cb.checked) {
+          hiddenColumns.delete(col.name);
+        } else {
+          hiddenColumns.add(col.name);
+        }
+        cb.title = cb.checked ? 'Hide column' : 'Show column';
+        rerenderForVisibility();
+      });
+      label.appendChild(cb);
+    }
+
+    const text = document.createElement('div');
+    text.className = 'col-text';
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'col-name';
+    nameDiv.textContent = col.name;
+    const typeDiv = document.createElement('div');
+    typeDiv.className = 'col-type';
+    typeDiv.textContent = col.type;
+    text.appendChild(nameDiv);
+    text.appendChild(typeDiv);
+    label.appendChild(text);
+
+    li.appendChild(label);
     schemaList.appendChild(li);
   }
+}
+
+function rerenderForVisibility() {
+  if (viewMode === 'sql') {
+    renderSqlPage();
+  } else {
+    renderTable(browseRows, columns);
+    updatePager(Math.min(rowStart + pageSize, totalRows));
+  }
+}
+
+/** @param {{ name: string; type: string }[]} cols */
+function visibleColumnsOf(cols) {
+  return cols.filter((c) => !hiddenColumns.has(c.name));
 }
 
 /** @param {unknown} value */
@@ -277,6 +329,7 @@ function renderTable(rows, cols) {
   editingRow = null;
 
   const showActions = viewMode === 'browse';
+  const visibleCols = visibleColumnsOf(cols);
 
   const headerRow = document.createElement('tr');
   if (showActions) {
@@ -285,13 +338,24 @@ function renderTable(rows, cols) {
     th.textContent = '';
     headerRow.appendChild(th);
   }
-  for (const col of cols) {
+  for (const col of visibleCols) {
     const th = document.createElement('th');
     th.textContent = col.name;
     th.title = col.type;
     headerRow.appendChild(th);
   }
   tableHead.appendChild(headerRow);
+
+  if (visibleCols.length === 0) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.className = 'empty-row';
+    td.colSpan = showActions ? 2 : 1;
+    td.textContent = 'No columns selected. Open the Schema panel to enable some columns.';
+    tr.appendChild(td);
+    tableBody.appendChild(tr);
+    return;
+  }
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -303,7 +367,7 @@ function renderTable(rows, cols) {
       renderRowActionsIdle(actionTd, tr, row, cols);
       tr.appendChild(actionTd);
     }
-    for (const col of cols) {
+    for (const col of visibleCols) {
       const td = document.createElement('td');
       const text = formatCell(row[col.name]);
       td.textContent = text;
