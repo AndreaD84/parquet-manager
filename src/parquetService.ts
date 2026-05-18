@@ -122,6 +122,14 @@ export class ParquetService {
     };
   }
 
+  async getOriginalCodec(uri: vscode.Uri): Promise<string> {
+    const { parquetMetadataAsync } = await loadHyparquet();
+    const file = await loadFileBuffer(uri.fsPath);
+    const metadata = await parquetMetadataAsync(file);
+    const codec = metadata.row_groups?.[0]?.columns?.[0]?.meta_data?.codec;
+    return mapCodecForDuckDb(codec);
+  }
+
   async readPage(uri: vscode.Uri, rowStart: number, pageSize = DEFAULT_PAGE_SIZE): Promise<ParquetPage> {
     const info = await this.getFileInfo(uri);
     const rowEnd = Math.min(rowStart + pageSize, info.rowCount);
@@ -214,4 +222,24 @@ export function pickParquetUri(resource?: vscode.Uri): vscode.Uri | undefined {
 export function defaultExportUri(source: vscode.Uri, extension: string): vscode.Uri {
   const base = path.basename(source.fsPath, '.parquet');
   return vscode.Uri.file(path.join(path.dirname(source.fsPath), `${base}${extension}`));
+}
+
+function mapCodecForDuckDb(codec: string | undefined): string {
+  switch ((codec ?? '').toUpperCase()) {
+    case 'UNCOMPRESSED':
+      return 'uncompressed';
+    case 'SNAPPY':
+      return 'snappy';
+    case 'GZIP':
+      return 'gzip';
+    case 'BROTLI':
+      return 'brotli';
+    case 'ZSTD':
+      return 'zstd';
+    case 'LZ4':
+    case 'LZ4_RAW':
+      return 'lz4_raw';
+    default:
+      return 'snappy';
+  }
 }

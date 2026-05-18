@@ -15,9 +15,13 @@ let viewMode = 'browse';
 let sqlResultRows = [];
 /** @type {{ name: string; type: string }[]} */
 let sqlResultColumns = [];
+/** @type {Record<string, unknown>[]} */
+let browseRows = [];
 
 let duckdbReady = false;
 let duckdbReadyMessage = 'DuckDB ready.';
+/** @type {{ rowIndex: number; tr: HTMLTableRowElement } | null} */
+let editingRow = null;
 
 const fileNameEl = document.getElementById('fileName');
 const statsEl = document.getElementById('stats');
@@ -107,12 +111,30 @@ function renderSchema(cols) {
   }
 }
 
+/** @param {unknown} value */
+function isEditableValue(value) {
+  if (value === null || value === undefined) {
+    return true;
+  }
+  const t = typeof value;
+  return t === 'string' || t === 'number' || t === 'bigint' || t === 'boolean';
+}
+
 /** @param {Record<string, unknown>[]} rows @param {{ name: string; type: string }[]} cols */
 function renderTable(rows, cols) {
   tableHead.innerHTML = '';
   tableBody.innerHTML = '';
+  editingRow = null;
+
+  const showActions = viewMode === 'browse';
 
   const headerRow = document.createElement('tr');
+  if (showActions) {
+    const th = document.createElement('th');
+    th.className = 'row-actions-col';
+    th.textContent = '';
+    headerRow.appendChild(th);
+  }
   for (const col of cols) {
     const th = document.createElement('th');
     th.textContent = col.name;
@@ -121,16 +143,176 @@ function renderTable(rows, cols) {
   }
   tableHead.appendChild(headerRow);
 
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     const tr = document.createElement('tr');
+    if (showActions) {
+      tr.dataset.rowIndex = String(rowStart + i);
+      const actionTd = document.createElement('td');
+      actionTd.className = 'row-actions-col';
+      renderRowActionsIdle(actionTd, tr, row, cols);
+      tr.appendChild(actionTd);
+    }
     for (const col of cols) {
       const td = document.createElement('td');
       const text = formatCell(row[col.name]);
       td.textContent = text;
       td.title = text;
+      td.dataset.colName = col.name;
       tr.appendChild(td);
     }
     tableBody.appendChild(tr);
+  }
+}
+
+/**
+ * @param {HTMLTableCellElement} actionTd
+ * @param {HTMLTableRowElement} tr
+ * @param {Record<string, unknown>} row
+ * @param {{ name: string; type: string }[]} cols
+ */
+function renderRowActionsIdle(actionTd, tr, row, cols) {
+  actionTd.innerHTML = '';
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'row-action-btn edit';
+  editBtn.innerHTML = '<span aria-hidden="true">&#9998;</span>';
+  editBtn.title = 'Edit row';
+  editBtn.disabled = !duckdbReady || editingRow !== null;
+  editBtn.addEventListener('click', () => startEdit(tr, row, cols));
+  actionTd.appendChild(editBtn);
+}
+
+/**
+ * @param {HTMLTableRowElement} tr
+ * @param {Record<string, unknown>} originalRow
+ * @param {{ name: string; type: string }[]} cols
+ */
+function startEdit(tr, originalRow, cols) {
+  if (!duckdbReady || editingRow !== null) {
+    return;
+  }
+  const rowIndex = Number.parseInt(tr.dataset.rowIndex ?? '', 10);
+  if (!Number.isFinite(rowIndex)) {
+    return;
+  }
+  tr.classList.add('editing');
+  editingRow = { rowIndex, tr };
+
+  const actionTd = /** @type {HTMLTableCellElement} */ (tr.querySelector('td.row-actions-col'));
+  actionTd.innerHTML = '';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'row-action-btn save';
+  saveBtn.innerHTML = '<span aria-hidden="true">&#10003;</span>';
+  saveBtn.title = 'Save row';
+  actionTd.appendChild(saveBtn);
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'row-action-btn cancel';
+  cancelBtn.innerHTML = '<span aria-hidden="true">&#10005;</span>';
+  cancelBtn.title = 'Cancel';
+  actionTd.appendChild(cancelBtn);
+
+  const tds = tr.querySelectorAll('td[data-col-name]');
+  /** @type {{ colName: string; input: HTMLInputElement; original: unknown; editable: boolean }[]} */
+  const fields = [];
+  let firstInput = null;
+
+  tds.forEach((cell) => {
+    const td = /** @type {HTMLTableCellElement} */ (cell);
+    const colName = td.dataset.colName ?? '';
+    const original = originalRow[colName];
+    const editable = isEditableValue(original);
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'cell-edit';
+    input.value = original === null || original === undefined ? '' : formatCell(original);
+    input.dataset.originalIsNull = original === null || original === undefined ? '1' : '0';
+    if (!editable) {
+      input.readOnly = true;
+      input.title = 'Complex value — not editable';
+    }
+    td.textContent = '';
+    td.appendChild(input);
+    if (!firstInput && editable) {
+      firstInput = input;
+    }
+    fields.push({ colName, input, original, editable });
+  });
+
+  if (firstInput) {
+    firstInput.focus();
+    firstInput.select();
+  }
+
+  cancelBtn.addEventListener('click', () => {
+    cancelEdit(tr, originalRow, cols);
+  });
+
+  saveBtn.addEventListener('click', () => {
+    /** @type {Record<string, unknown>} */
+    const changes = {};
+    let hasChange = false;
+    for (const field of fields) {
+      if (!field.editable) {
+        continue;
+      }
+      const originalStr =
+        field.original === null || field.original === undefined ? '' : formatCell(field.original);
+      const newStr = field.input.value;
+      const wasNull = field.input.dataset.originalIsNull === '1';
+      if (newStr === originalStr && !(newStr === '' && !wasNull)) {
+        continue;
+      }
+      const newValue = newStr === '' ? null : newStr;
+      if (wasNull && newValue === null) {
+        continue;
+      }
+      changes[field.colName] = newValue;
+      hasChange = true;
+    }
+    if (!hasChange) {
+      cancelEdit(tr, originalRow, cols);
+      return;
+    }
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+    for (const f of fields) {
+      f.input.disabled = true;
+    }
+    setStatus('Saving row…');
+    vscode.postMessage({
+      type: 'saveRow',
+      rowIndex: editingRow.rowIndex,
+      values: changes,
+      rowStart,
+      pageSize,
+    });
+  });
+}
+
+/**
+ * @param {HTMLTableRowElement} tr
+ * @param {Record<string, unknown>} originalRow
+ * @param {{ name: string; type: string }[]} cols
+ */
+function cancelEdit(tr, originalRow, cols) {
+  tr.classList.remove('editing');
+  editingRow = null;
+  const tds = tr.querySelectorAll('td[data-col-name]');
+  tds.forEach((cell) => {
+    const td = /** @type {HTMLTableCellElement} */ (cell);
+    const colName = td.dataset.colName ?? '';
+    const text = formatCell(originalRow[colName]);
+    td.textContent = text;
+    td.title = text;
+  });
+  const actionTd = /** @type {HTMLTableCellElement} */ (tr.querySelector('td.row-actions-col'));
+  if (actionTd) {
+    renderRowActionsIdle(actionTd, tr, originalRow, cols);
   }
 }
 
@@ -267,6 +449,25 @@ window.addEventListener('message', (event) => {
     return;
   }
 
+  if (msg.type === 'rowSaved') {
+    setStatus('Row saved.');
+    return;
+  }
+
+  if (msg.type === 'rowSaveError') {
+    setStatus(msg.message, true);
+    if (editingRow) {
+      const tr = editingRow.tr;
+      tr.querySelectorAll('button.row-action-btn').forEach((b) => {
+        /** @type {HTMLButtonElement} */ (b).disabled = false;
+      });
+      tr.querySelectorAll('input.cell-edit').forEach((i) => {
+        /** @type {HTMLInputElement} */ (i).disabled = false;
+      });
+    }
+    return;
+  }
+
   if (msg.type === 'sqlResult') {
     updateRunButton();
     setDuckdbStatus(duckdbReadyMessage);
@@ -288,12 +489,13 @@ window.addEventListener('message', (event) => {
   columns = msg.columns;
   totalRows = msg.totalRows;
   rowStart = msg.rowStart;
+  browseRows = msg.rows;
   const rowEnd = msg.rowEnd;
 
   fileNameEl.textContent = msg.fileName;
   statsEl.textContent = `${totalRows.toLocaleString()} rows · ${columns.length} columns`;
   renderSchema(columns);
-  renderTable(msg.rows, columns);
+  renderTable(browseRows, columns);
   updatePager(rowEnd);
   setStatus(`Showing rows ${rowStart + 1}–${rowEnd} of ${totalRows.toLocaleString()}`);
 });

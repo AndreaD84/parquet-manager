@@ -1,3 +1,4 @@
+import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { assertSelectOnly, DuckdbService } from './duckdbService';
@@ -18,7 +19,19 @@ interface WebviewRunSqlMessage {
   sql: string;
 }
 
-type WebviewInboundMessage = WebviewReadyMessage | WebviewLoadPageMessage | WebviewRunSqlMessage;
+interface WebviewSaveRowMessage {
+  type: 'saveRow';
+  rowIndex: number;
+  values: Record<string, unknown>;
+  rowStart: number;
+  pageSize: number;
+}
+
+type WebviewInboundMessage =
+  | WebviewReadyMessage
+  | WebviewLoadPageMessage
+  | WebviewRunSqlMessage
+  | WebviewSaveRowMessage;
 
 export class ParquetEditorProvider implements vscode.CustomReadonlyEditorProvider {
   public static readonly viewType = 'parquet-manager.preview';
@@ -91,11 +104,19 @@ export class ParquetEditorProvider implements vscode.CustomReadonlyEditorProvide
               message: `Could not send results to the preview (${detail}). Try LIMIT on large result sets.`,
             });
           }
+          return;
+        }
+
+        if (raw.type === 'saveRow') {
+          await this.saveRow(uri, webviewPanel.webview, raw, post);
+          return;
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (raw.type === 'runSql') {
           post({ type: 'sqlError', message });
+        } else if (raw.type === 'saveRow') {
+          post({ type: 'rowSaveError', message });
         } else {
           postError(message);
         }
@@ -121,6 +142,36 @@ export class ParquetEditorProvider implements vscode.CustomReadonlyEditorProvide
         state: 'error',
         message: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+
+  private async saveRow(
+    uri: vscode.Uri,
+    webview: vscode.Webview,
+    message: WebviewSaveRowMessage,
+    post: (message: unknown) => void,
+  ): Promise<void> {
+    const tmpPath = `${uri.fsPath}.parquet-manager.tmp`;
+    try {
+      const codec = await this.parquetService.getOriginalCodec(uri);
+      await this.duckdbService.writeRowUpdate(
+        uri.fsPath,
+        tmpPath,
+        message.rowIndex,
+        message.values,
+        codec,
+      );
+      await this.duckdbService.dispose();
+      await swapFile(tmpPath, uri.fsPath);
+      await this.duckdbService.ensureReady(uri.fsPath);
+      post({ type: 'rowSaved', rowIndex: message.rowIndex });
+      await this.sendBrowsePage(uri, webview, message.rowStart, message.pageSize);
+    } catch (err) {
+      try {
+        await fs.unlink(tmpPath);
+      } catch {
+      }
+      throw err;
     }
   }
 
@@ -240,4 +291,37 @@ function getNonce(): string {
     text += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return text;
+}
+
+async function swapFile(src: string, dst: string): Promise<void> {
+  const delays = [50, 100, 200, 400, 600, 800, 1000, 1500];
+  let lastErr: unknown;
+  for (let i = 0; i <= delays.length; i++) {
+    try {
+      await fs.rename(src, dst);
+      return;
+    } catch (err) {
+      lastErr = err;
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES' && code !== 'ENOTEMPTY') {
+        throw err;
+      }
+      if (i === delays.length) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delays[i]));
+    }
+  }
+
+  try {
+    await fs.copyFile(src, dst);
+    await fs.unlink(src);
+    return;
+  } catch (copyErr) {
+    const msg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+    const copyMsg = copyErr instanceof Error ? copyErr.message : String(copyErr);
+    throw new Error(
+      `Could not replace the parquet file. The file may be open in another program or locked by antivirus. Original error: ${msg}. Fallback copy also failed: ${copyMsg}`,
+    );
+  }
 }

@@ -324,3 +324,71 @@ tbody tr:nth-child(even) {
 tbody tr:hover {
   background: var(--vscode-list-hoverBackground);
 }
+
+.row-actions-col {
+  width: 64px;
+  min-width: 64px;
+  max-width: 64px;
+  padding: 4px 6px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.row-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--vscode-input-background);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.row-action-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.row-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.row-action-btn.save {
+  color: var(--vscode-testing-iconPassed, #4ec9b0);
+}
+
+.row-action-btn.cancel {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+tr.editing {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+td input.cell-edit {
+  width: 100%;
+  min-width: 80px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+td input.cell-edit:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+td input.cell-edit[readonly] {
+  opacity: 0.6;
+}

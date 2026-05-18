@@ -1,3 +1,4 @@
+import * as fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 
@@ -42,6 +43,9 @@ type DuckDbBindings = {
   open: (config: { path: string }) => void;
   connect: () => DuckDbConnection;
   reset: () => void;
+  copyFileToBuffer: (name: string) => Uint8Array;
+  copyFileToPath: (name: string, path: string) => void;
+  dropFile: (name: string) => void;
 };
 
 type DuckDbConnection = {
@@ -85,6 +89,102 @@ export class DuckdbService {
     }
     const table = this.conn.query(sql);
     return tableToResult(table);
+  }
+
+  async getColumnTypes(filePath: string): Promise<Map<string, string>> {
+    await this.ensureReady(filePath);
+    if (!this.conn) {
+      throw new Error('DuckDB is not connected.');
+    }
+    const table = this.conn.query('DESCRIBE parquet_data');
+    const result = tableToResult(table);
+    const map = new Map<string, string>();
+    for (const row of result.rows) {
+      const name = row.column_name;
+      const type = row.column_type;
+      if (typeof name === 'string' && typeof type === 'string') {
+        map.set(name, type);
+      }
+    }
+    return map;
+  }
+
+  async writeRowUpdate(
+    filePath: string,
+    tmpPath: string,
+    rowIndex: number,
+    changedValues: Record<string, unknown>,
+    codec: string,
+  ): Promise<void> {
+    await this.ensureReady(filePath);
+    if (!this.conn) {
+      throw new Error('DuckDB is not connected.');
+    }
+    const types = await this.getColumnTypes(filePath);
+    const replaceClauses: string[] = [];
+    for (const [colName, value] of Object.entries(changedValues)) {
+      if (!types.has(colName)) {
+        throw new Error(`Unknown column "${colName}".`);
+      }
+      const colType = types.get(colName) ?? 'VARCHAR';
+      const q = quoteIdent(colName);
+      const literal = toSqlLiteralCast(value, colType);
+      this.validateCast(colName, colType, literal, value);
+      replaceClauses.push(
+        `CASE WHEN __rn = ${Math.trunc(rowIndex)} THEN ${literal} ELSE ${q} END AS ${q}`,
+      );
+    }
+
+    const escFile = filePath.replace(/\\/g, '/').replace(/'/g, "''");
+    const replaceSql = replaceClauses.length > 0 ? `REPLACE (${replaceClauses.join(', ')})` : '';
+    const vfsName = `parquet-manager-output-${Date.now()}.parquet`;
+    const sql = `COPY (
+      SELECT * EXCLUDE (__rn) ${replaceSql}
+      FROM (
+        SELECT *, (ROW_NUMBER() OVER ()) - 1 AS __rn FROM read_parquet('${escFile}')
+      )
+    ) TO '${vfsName}' (FORMAT PARQUET, CODEC '${codec}')`;
+
+    this.conn.query(sql);
+
+    if (!this.bindings) {
+      throw new Error('DuckDB bindings unavailable.');
+    }
+    let bytes: Uint8Array;
+    try {
+      bytes = this.bindings.copyFileToBuffer(vfsName);
+    } finally {
+      try {
+        this.bindings.dropFile(vfsName);
+      } catch {
+      }
+    }
+    await fs.writeFile(tmpPath, bytes);
+  }
+
+  private validateCast(
+    colName: string,
+    colType: string,
+    literal: string,
+    rawValue: unknown,
+  ): void {
+    if (!this.conn) {
+      throw new Error('DuckDB is not connected.');
+    }
+    try {
+      this.conn.query(`SELECT ${literal}`);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      const display =
+        rawValue === null || rawValue === undefined
+          ? 'NULL'
+          : typeof rawValue === 'string'
+            ? `"${rawValue}"`
+            : String(rawValue);
+      throw new Error(
+        `Invalid value for column "${colName}" (${colType}): ${display}. ${detail}`,
+      );
+    }
   }
 
   async dispose(): Promise<void> {
@@ -188,4 +288,29 @@ export function assertSelectOnly(sql: string): void {
   if (/[;]/.test(stripped.replace(/;+\s*$/, ''))) {
     throw new Error('Multiple SQL statements are not allowed.');
   }
+}
+
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+function toSqlLiteralCast(value: unknown, colType: string): string {
+  if (value === null || value === undefined) {
+    return `CAST(NULL AS ${colType})`;
+  }
+  if (typeof value === 'boolean') {
+    return `CAST(${value ? 'TRUE' : 'FALSE'} AS ${colType})`;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      return `CAST(NULL AS ${colType})`;
+    }
+    return `CAST(${value} AS ${colType})`;
+  }
+  if (typeof value === 'bigint') {
+    return `CAST(${value.toString()} AS ${colType})`;
+  }
+  const asString = typeof value === 'string' ? value : JSON.stringify(value);
+  const escaped = asString.replace(/'/g, "''");
+  return `CAST('${escaped}' AS ${colType})`;
 }
